@@ -65,7 +65,7 @@ export async function getsingbox_config(e) {
 
     applyTemplate(config, Rule_Data.data, e);
     if (e.cfip) {
-        const cfipResults = parseCFIP(e.cfip);
+        const cfipResults = await resolveCFIP(e.cfip, e.userAgent);
         if (cfipResults) config.outbounds = applyCFIPToOutbounds(config.outbounds, cfipResults);
     }
     return {
