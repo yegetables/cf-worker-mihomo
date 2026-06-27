@@ -6,36 +6,59 @@ import Config112Alpha from '../../config/singbox_1.12.X_alpha.js';
 import Config113 from '../../config/singbox_1.13.X.js';
 import Config114Alpha from '../../config/singbox_1.14.X_alpha.js';
 export async function getsingbox_config(e) {
-    const config = structuredClone(Verbose(e));
-    const alldata = await Promise.all([
-        getOutbounds_Data(e),
-        fetchResponse(e.rule),
-        e.exclude_package ? fetchpackExtract() : null,
-        e.exclude_address ? fetchipExtract() : null,
-    ]);
-    // 获取订阅数据
-    const Outbounds_Data = alldata[0];
-    if (Outbounds_Data?.data?.outbounds?.length === 0) {
-        throw new Error(`节点为空，请使用有效订阅`);
+    let config, Outbounds_Data, Rule_Data;
+
+    if (e.originalTemplate) {
+        // 原模版模式：订阅内容直接作为完整配置，不引入 singbox 基础配置
+        if (!e.urls?.length) throw new Error('缺少订阅链接');
+        const data = await fetchResponse(e.urls[0], e.userAgent);
+        if (!data?.data) throw new Error('获取订阅数据失败');
+        Outbounds_Data = {
+            data: { outbounds: data.data.outbounds || [] },
+            status: data.status,
+            headers: data.headers,
+        };
+        // 单独处理附加包/IP排除数据
+        if (e.exclude_package) e.Package = await fetchpackExtract();
+        if (e.exclude_address) e.Address = await fetchipExtract();
+        return {
+            status: data.status,
+            headers: data.headers,
+            data: JSON.stringify(data.data, null, 4),
+        };
+    } else {
+        config = structuredClone(Verbose(e));
+        const alldata = await Promise.all([
+            getOutbounds_Data(e),
+            fetchResponse(e.rule),
+            e.exclude_package ? fetchpackExtract() : null,
+            e.exclude_address ? fetchipExtract() : null,
+        ]);
+        // 获取订阅数据
+        Outbounds_Data = alldata[0];
+        if (Outbounds_Data?.data?.outbounds?.length === 0) {
+            throw new Error(`节点为空，请使用有效订阅`);
+        }
+        // 获取规则数据
+        Rule_Data = alldata[1];
+        if (!Rule_Data?.data) {
+            throw new Error('获取规则数据失败');
+        }
+
+        e.Package = alldata[2];
+        e.Address = alldata[3];
+
+        // 处理节点数据
+        Outbounds_Data.data.outbounds = outboundArrs(Outbounds_Data.data);
+        const ApiUrlname = Outbounds_Data.data.outbounds.map((res) => res.tag);
+
+        // 策略组处理
+        Rule_Data.data.outbounds = loadAndSetOutbounds(Rule_Data.data.outbounds, ApiUrlname, e);
+
+        // 合并节点
+        Rule_Data.data.outbounds.push(...Outbounds_Data.data.outbounds);
     }
-    // 获取规则数据
-    const Rule_Data = alldata[1];
-    if (!Rule_Data?.data) {
-        throw new Error('获取规则数据失败');
-    }
 
-    e.Package = alldata[2];
-    e.Address = alldata[3];
-
-    // 处理节点数据
-    Outbounds_Data.data.outbounds = outboundArrs(Outbounds_Data.data);
-    const ApiUrlname = Outbounds_Data.data.outbounds.map((res) => res.tag);
-
-    // 策略组处理
-    Rule_Data.data.outbounds = loadAndSetOutbounds(Rule_Data.data.outbounds, ApiUrlname, e);
-
-    // 合并节点
-    Rule_Data.data.outbounds.push(...Outbounds_Data.data.outbounds);
     applyTemplate(config, Rule_Data.data, e);
     return {
         status: Outbounds_Data.status,
@@ -302,8 +325,17 @@ export function loadAndSetOutbounds(Outbounds, ApiUrlname, e) {
 }
 
 export function applyTemplate(top, rule, e) {
+    // 确保基础结构存在（允许空对象作为顶模板的基础）
+    top.route ??= {};
+    top.dns ??= {};
+    top.dns.servers ??= [];
+    top.inbounds ??= [];
+    top.outbounds ??= [];
+    top.log ??= {};
+    top.endpoints ??= [];
+
     const existingSet = Array.isArray(top.route.rule_set) ? top.route.rule_set : [];
-    const newSet = Array.isArray(rule.route.rule_set) ? rule.route.rule_set : [];
+    const newSet = Array.isArray(rule.route?.rule_set) ? rule.route.rule_set : [];
     const mergedMap = new Map();
     for (const item of existingSet) {
         if (item?.tag) mergedMap.set(item.tag, item);
@@ -315,7 +347,7 @@ export function applyTemplate(top, rule, e) {
     top.inbounds = [...(top.inbounds || []), ...(rule.inbounds || [])];
     top.outbounds = [...(top.outbounds || []), ...(rule.outbounds || [])];
     top.route.final = rule?.route?.final || top.route.final;
-    top.route.rules = [...(top.route.rules || []), ...(rule.route.rules || [])];
+    top.route.rules = [...(top.route.rules || []), ...(rule.route?.rules || [])];
     top.route.rule_set = [...mergedMap.values()];
 
     // 添加排除包和排除地址配置

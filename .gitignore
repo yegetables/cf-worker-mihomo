@@ -175,3 +175,5 @@ dist
 
 script/*.log
 .env*.local
+.codegraph
+package-lock.json

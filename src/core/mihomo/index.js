@@ -3,39 +3,83 @@ import getProxies_Data from './proxies.js';
 import clashConfig from '../../config/mihomo.js';
 
 export async function getmihomo_config(e) {
-    const config = structuredClone(clashConfig);
     // 客户端验证
     if (e.checkUA && !/meta|clash.meta|clash|clashverge|mihomo/i.test(e.userAgent)) {
         throw new Error('不支持的客户端');
     }
-    if (!e.rule) {
-        throw new Error('缺少规则模板');
-    }
-    const alldata = await Promise.all([
-        getProxies_Data(e),
-        fetchResponse(e.rule),
-        e.exclude_package ? fetchpackExtract() : null,
-        e.exclude_address ? fetchipExtract() : null,
-    ]);
-    // 获取订阅数据
-    const Proxies_Data = alldata[0];
-    if (Proxies_Data?.data?.proxies?.length === 0) {
-        throw new Error('节点为空，请使用有效订阅');
-    }
-    // 获取规则数据
-    const Rule_Data = alldata[1];
-    if (!Rule_Data?.data) {
-        throw new Error('获取规则数据失败');
+
+    let config, Proxies_Data, Rule_Data;
+
+    if (e.originalTemplate) {
+        // 原模版模式：订阅内容直接作为完整配置，保留所有字段
+        if (!e.urls?.length) throw new Error('缺少订阅链接');
+        const data = await fetchResponse(e.urls[0], e.userAgent);
+        if (!data?.data) throw new Error('获取订阅数据失败');
+        Proxies_Data = {
+            data: { proxies: data.data.proxies || [] },
+            status: data.status,
+            headers: data.headers,
+        };
+        // 深拷贝订阅内容作为基础配置
+        const config = structuredClone(data.data);
+        // 单独处理附加包/IP排除数据
+        if (e.exclude_package) e.Package = await fetchpackExtract();
+        if (e.exclude_address) e.Address = await fetchipExtract();
+        // 仅应用用户显式指定的附加参数
+        if (e.log) config['log-level'] = e.log;
+        if (e.tun === true && config.tun) {
+            config.tun.enable = false;
+        }
+        if (config.tun) {
+            if (e.exclude_address && e.Address) {
+                config.tun['route-address'] = ['0.0.0.0/1', '128.0.0.0/1', '::/1', '8000::/1'];
+                config.tun['route-exclude-address'] = e.Address;
+            }
+            if (e.exclude_package && e.Package) {
+                config.tun['include-package'] = [];
+                config.tun['exclude-package'] = e.Package;
+            }
+        }
+        if (e.adgdns && config.dns?.nameserver) {
+            const proxyName = config['proxy-groups']?.[0]?.name || 'PROXY';
+            config.dns.nameserver = [`https://dns.adguard-dns.com/dns-query#${proxyName}`];
+        }
+        return {
+            status: data.status,
+            headers: data.headers,
+            data: JSON.stringify(config, null, 4),
+        };
+    } else {
+        config = structuredClone(clashConfig);
+        if (!e.rule) throw new Error('缺少规则模板');
+
+        const alldata = await Promise.all([
+            getProxies_Data(e),
+            fetchResponse(e.rule),
+            e.exclude_package ? fetchpackExtract() : null,
+            e.exclude_address ? fetchipExtract() : null,
+        ]);
+        // 获取订阅数据
+        Proxies_Data = alldata[0];
+        if (Proxies_Data?.data?.proxies?.length === 0) {
+            throw new Error('节点为空，请使用有效订阅');
+        }
+        // 获取规则数据
+        Rule_Data = alldata[1];
+        if (!Rule_Data?.data) {
+            throw new Error('获取规则数据失败');
+        }
+
+        // 处理路由的排除配置
+        e.Package = alldata[2];
+        e.Address = alldata[3];
+
+        // 合并代理数据
+        Rule_Data.data.proxies = [...(Rule_Data?.data?.proxies || []), ...Proxies_Data.data.proxies];
+        Rule_Data.data['proxy-groups'] = getProxies_Grouping(Proxies_Data.data, Rule_Data.data, e);
+        Rule_Data.data['proxy-providers'] = Proxies_Data.data.providers;
     }
 
-    // 处理路由的排除配置
-    e.Package = alldata[2];
-    e.Address = alldata[3];
-
-    // 合并代理数据
-    Rule_Data.data.proxies = [...(Rule_Data?.data?.proxies || []), ...Proxies_Data.data.proxies];
-    Rule_Data.data['proxy-groups'] = getProxies_Grouping(Proxies_Data.data, Rule_Data.data, e);
-    Rule_Data.data['proxy-providers'] = Proxies_Data.data.providers;
     applyTemplate(config, Rule_Data.data, e);
     return {
         status: Proxies_Data.status,
@@ -57,8 +101,8 @@ export function applyTemplate(top, rule, e) {
     top.rules = [...(top.rules || []), ...(rule.rules || [])];
     top['sub-rules'] = rule['sub-rules'] || {};
     top['rule-providers'] = { ...(top['rule-providers'] || {}), ...(rule['rule-providers'] || {}) };
-    const proxyName = rule['proxy-groups'][0].name;
-    if (top.dns.nameserver && rule['proxy-groups'][0].name) {
+    const proxyName = rule['proxy-groups']?.[0]?.name;
+    if (top.dns?.nameserver && proxyName) {
         top.dns.nameserver = top.dns.nameserver.map((ns) => {
             if (typeof ns === 'string') {
                 return ns.replace(/#PROXY/g, `#${proxyName}`);
@@ -78,8 +122,8 @@ export function applyTemplate(top, rule, e) {
             top.tun['exclude-package'] = e.Package || [];
         }
     }
-    if (e.adgdns) {
-        top.dns.nameserver = [`https://dns.adguard-dns.com/dns-query#${proxyName}`];
+    if (e.adgdns && top.dns) {
+        top.dns.nameserver = [`https://dns.adguard-dns.com/dns-query#${proxyName || 'PROXY'}`];
         top.dns['nameserver-policy']['RULE-SET:private_domain,cn_domain'] = ['https://doh.18bit.cn/dns-query#DIRECT'];
     }
     return top;

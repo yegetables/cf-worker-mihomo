@@ -45,6 +45,10 @@ export default function configs() {
             templates: {
                 通用: [
                     {
+                        label: '原模版 (不修改规则)',
+                        value: '_original',
+                    },
+                    {
                         label: '默认(ACL4SSR_Online_Full)',
                         value: '/ACL4SSR_Online_Full.yaml',
                     },
@@ -174,6 +178,10 @@ export default function configs() {
             },
             templates: {
                 通用: [
+                    {
+                        label: '原模版 (不修改规则)',
+                        value: '_original',
+                    },
                     {
                         label: '默认(ACL4SSR_Online_Full)',
                         value: '/ACL4SSR_Online_Full.yaml',

@@ -53,7 +53,9 @@ export function buildConfig(request, env, isNode = false) {
     if (templateBaseUrl) data.templateBaseUrl = templateBaseUrl;
     const template = getParam('template');
     if (template) {
-        if (templateBaseUrl) {
+        if (template === '_original') {
+            data.originalTemplate = true;
+        } else if (templateBaseUrl) {
             data.rule = `${templateBaseUrl}/${data.target}${template}`;
         } else {
             data.rule = `${url.origin}${isNode ? '/template' : ''}/${data.target}${template}`;
