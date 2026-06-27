@@ -136,8 +136,12 @@ export function applyTemplate(top, rule, e) {
  * @returns {Object} 分组信息
  */
 export function getProxies_Grouping(proxies, groups, e) {
+    const groupsArr = groups['proxy-groups'];
+    if (!Array.isArray(groupsArr)) {
+        return [];
+    }
     const deletedGroups = []; // 用于记录已删除的组名
-    const updatedGroups = groups['proxy-groups'].filter((group) => {
+    const updatedGroups = groupsArr.filter((group) => {
         let matchFound = false;
         // 确保 filter 存在并且是一个字符串
         let filter = group.filter;

@@ -3,6 +3,18 @@ import { handleRequest } from './utils/handler.js';
 
 export default {
     async fetch(request, env) {
+        // 先尝试从 Assets 读取模板文件
+        if (env.ASSETS) {
+            try {
+                const asset = await env.ASSETS.fetch(request);
+                if (asset.status === 200) {
+                    return asset;
+                }
+            } catch {
+                // 没有匹配的资产，继续走转换逻辑
+            }
+        }
+
         const e = buildConfig(request, env, false);
         try {
             const result = await handleRequest(e);
