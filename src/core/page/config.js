@@ -27,7 +27,7 @@ export default function configs() {
 
 ✔ fallback: 获取原节点格式和流量信息
             `,
-            protocolList: ['udp', 'ech', 'relay', 'ep', 'ea', 'adgdns', 'tun', 'fallback', 'log'],
+            protocolList: ['udp', 'ech', 'relay', 'ep', 'ea', 'adgdns', 'tun', 'fallback', 'log', 'cfip'],
             protocolLabels: {
                 udp: 'UDP',
                 ech: 'ECH',
@@ -40,6 +40,11 @@ export default function configs() {
                 log: {
                     label: '日志等级',
                     levels: ['silent', 'error', 'warning', 'info', 'debug'],
+                },
+                cfip: {
+                    label: '优选IP替换',
+                    type: 'textarea',
+                    placeholder: 'ip:port#节点名称（每行一个）',
                 },
             },
             templates: {
@@ -158,7 +163,7 @@ export default function configs() {
 
 ✔ fallback: 获取原节点格式和流量信息
             `,
-            protocolList: ['udp', 'ech', 'relay', 'udp_frag', 'tls_frag', 'ep', 'ea', 'tailscale', 'adgdns', 'tun', 'fallback', 'log'],
+            protocolList: ['udp', 'ech', 'relay', 'udp_frag', 'tls_frag', 'ep', 'ea', 'tailscale', 'adgdns', 'tun', 'fallback', 'log', 'cfip'],
             protocolLabels: {
                 udp: 'UDP',
                 ech: 'ECH',
@@ -174,6 +179,11 @@ export default function configs() {
                 log: {
                     label: '日志等级',
                     levels: ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'panic'],
+                },
+                cfip: {
+                    label: '优选IP替换',
+                    type: 'textarea',
+                    placeholder: 'ip:port#节点名称（每行一个）',
                 },
             },
             templates: {

@@ -1,4 +1,4 @@
-import { fetchpackExtract, fetchipExtract, fetchResponse } from '../../utils/index.js';
+import { fetchpackExtract, fetchipExtract, fetchResponse, resolveCFIP, applyCFIPToProxies } from '../../utils/index.js';
 import getProxies_Data from './proxies.js';
 import clashConfig from '../../config/mihomo.js';
 
@@ -13,8 +13,10 @@ export async function getmihomo_config(e) {
     if (e.originalTemplate) {
         // 原模版模式：订阅内容直接作为完整配置，保留所有字段
         if (!e.urls?.length) throw new Error('缺少订阅链接');
-        const data = await fetchResponse(e.urls[0], e.userAgent);
-        if (!data?.data) throw new Error('获取订阅数据失败');
+        // 原模版需要获取 Clash YAML，使用 clash.meta UA 确保订阅服务返回正确格式
+        const ua = /clash|meta|mihomo/i.test(e.userAgent) ? e.userAgent : 'clash.meta';
+        const data = await fetchResponse(e.urls[0], ua);
+        if (!data?.data || typeof data.data === 'string') throw new Error('获取订阅数据失败');
         Proxies_Data = {
             data: { proxies: data.data.proxies || [] },
             status: data.status,
@@ -43,6 +45,10 @@ export async function getmihomo_config(e) {
         if (e.adgdns && config.dns?.nameserver) {
             const proxyName = config['proxy-groups']?.[0]?.name || 'PROXY';
             config.dns.nameserver = [`https://dns.adguard-dns.com/dns-query#${proxyName}`];
+        }
+        if (e.cfip) {
+            const cfipResults = await resolveCFIP(e.cfip, e.userAgent);
+            if (cfipResults) config.proxies = applyCFIPToProxies(config.proxies, cfipResults);
         }
         return {
             status: data.status,
@@ -81,6 +87,10 @@ export async function getmihomo_config(e) {
     }
 
     applyTemplate(config, Rule_Data.data, e);
+    if (e.cfip) {
+        const cfipResults = await resolveCFIP(e.cfip, e.userAgent);
+        if (cfipResults) config.proxies = applyCFIPToProxies(config.proxies, cfipResults);
+    }
     return {
         status: Proxies_Data.status,
         headers: Proxies_Data.headers,

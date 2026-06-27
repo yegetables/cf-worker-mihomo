@@ -177,3 +177,159 @@ export async function fetchWithFallback(url, options) {
     const apiUrl = buildApiUrl(url, options.sub, options.target);
     return await fetchResponse(apiUrl, options.userAgent);
 }
+
+/**
+ * 解析优选IP行：支持 ip:port#名称、sub://、URL、IPv6
+ */
+function parseCFIPLine(line) {
+    const raw = line.trim();
+    if (!raw) return null;
+
+    // sub:// 协议 → 作为需要异步抓取的标记
+    if (raw.toLowerCase().startsWith('sub://')) {
+        return { type: 'sub', raw };
+    }
+
+    // URL 链接 → 标记为需要异步抓取
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        return { type: 'url', raw };
+    }
+
+    // 提取 #备注
+    const hashPos = raw.indexOf('#');
+    const addrPart = hashPos !== -1 ? raw.substring(0, hashPos).trim() : raw;
+    const namePart = hashPos !== -1 ? raw.substring(hashPos + 1).trim() : null;
+
+    // IPv6: [::]:port
+    if (addrPart.startsWith('[')) {
+        const bracketEnd = addrPart.indexOf(']');
+        if (bracketEnd === -1) return null;
+        const ip = addrPart.substring(1, bracketEnd);
+        const rest = addrPart.substring(bracketEnd + 1);
+        let port = 443;
+        if (rest.startsWith(':')) port = parseInt(rest.substring(1), 10);
+        if (isNaN(port)) return null;
+        return { type: 'direct', ip, port, name: namePart || `[${ip}]-${port}` };
+    }
+
+    // 检测是否包含 ://（LINK 内容，如 vless://）
+    if (addrPart.includes('://')) {
+        return { type: 'link', raw };
+    }
+
+    // 标准 IPv4: ip:port 或 ip
+    const colonPos = addrPart.lastIndexOf(':');
+    if (colonPos === -1) {
+        return { type: 'direct', ip: addrPart, port: 443, name: namePart || addrPart };
+    }
+    const ip = addrPart.substring(0, colonPos);
+    const port = parseInt(addrPart.substring(colonPos + 1), 10);
+    if (isNaN(port)) return null;
+    return { type: 'direct', ip, port, name: namePart || `${ip}-${port}` };
+}
+
+/**
+ * 从文本行中提取直接 IP 条目（忽略 URL/sub 等需要异步处理的）
+ */
+function parseDirectIPs(text) {
+    if (!text || typeof text !== 'string') return [];
+    return text.split('\n').map(l => parseCFIPLine(l.trim())).filter(r => r && r.type === 'direct');
+}
+
+/**
+ * 异步获取优选IP结果，支持 URL、sub:// 和内联文本
+ */
+export async function resolveCFIP(cfipText, userAgent, fetchOptions = {}) {
+    if (!cfipText) return null;
+    const lines = cfipText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return null;
+
+    const results = [];
+
+    for (const line of lines) {
+        const parsed = parseCFIPLine(line);
+
+        if (!parsed) continue;
+
+        if (parsed.type === 'direct') {
+            results.push({ ip: parsed.ip, port: parsed.port, name: parsed.name });
+            continue;
+        }
+
+        // 异步类型：需要 fetch 获取远程内容
+        let fetchUrl = parsed.raw;
+        if (parsed.type === 'sub') {
+            // sub://host → https://host/sub?host=example.com...
+            fetchUrl = fetchUrl.replace(/^sub:\/\//i, 'https://');
+            // 添加必要参数
+            const subUrl = new URL(fetchUrl);
+            if (!subUrl.pathname || subUrl.pathname === '/') {
+                subUrl.pathname = '/sub';
+            }
+            if (!subUrl.searchParams.has('host')) subUrl.searchParams.set('host', 'example.com');
+            fetchUrl = subUrl.toString();
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), fetchOptions.timeout || 10000);
+            const res = await fetch(fetchUrl, {
+                headers: { 'User-Agent': userAgent || 'Mozilla/5.0' },
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            let text = await res.text();
+
+            // 尝试 base64 解码（订阅内容常用格式）
+            const cleanText = text.replace(/\s/g, '');
+            if (cleanText.length > 0 && cleanText.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(cleanText)) {
+                try {
+                    const bytes = Uint8Array.from(atob(cleanText), c => c.charCodeAt(0));
+                    const decoded = new TextDecoder('utf-8').decode(bytes);
+                    if (decoded.includes(':') || decoded.includes('#')) text = decoded;
+                } catch { /* 不是 base64，保持原样 */ }
+            }
+
+            // 解析获取到的文本内容
+            const fetchedResults = text.split('\n')
+                .map(l => parseCFIPLine(l.trim()))
+                .filter(r => r && r.type === 'direct')
+                .map(r => ({ ip: r.ip, port: r.port, name: r.name }));
+            results.push(...fetchedResults);
+        } catch {
+            continue; // 抓取出错时跳过该条目
+        }
+    }
+
+    return results.length > 0 ? results : null;
+}
+
+export function parseCFIP(text) {
+    // 兼容旧接口
+    const direct = parseDirectIPs(text);
+    return direct.length > 0 ? direct : null;
+}
+
+/**
+ * 将优选IP结果应用到 mihomo proxies 数组
+ * 保留原始节点的 type/uuid/cipher/tls 等协议参数，仅替换 server/port/name
+ */
+export function applyCFIPToProxies(proxies, cfipResults) {
+    if (!cfipResults || !proxies?.length) return proxies;
+    return cfipResults.map((r, i) => {
+        const origin = proxies[i % proxies.length];
+        return { ...origin, server: r.ip, port: r.port, name: r.name };
+    });
+}
+
+/**
+ * 将优选IP结果应用到 singbox outbounds 数组
+ * singbox 使用 server/server_port/tag 字段
+ */
+export function applyCFIPToOutbounds(outbounds, cfipResults) {
+    if (!cfipResults || !outbounds?.length) return outbounds;
+    return cfipResults.map((r, i) => {
+        const origin = outbounds[i % outbounds.length];
+        return { ...origin, server: r.ip, server_port: r.port, tag: r.name };
+    });
+}

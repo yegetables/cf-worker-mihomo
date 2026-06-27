@@ -616,6 +616,14 @@ export async function getFakePage(e) {
                     protocolParams[protoName] = select.value;
                 }
             });
+            // 获取所有文本框的值
+            const textareas = container.querySelectorAll('.proto-textarea');
+            textareas.forEach(ta => {
+                const val = ta.value.trim();
+                if (val) {
+                    protocolParams[ta.getAttribute('data-proto')] = val;
+                }
+            });
             if (links.length === 0 && !templateVal) {
                 alert('请至少填写一个订阅链接或选择一个模板');
                 return;
@@ -772,7 +780,96 @@ export async function getFakePage(e) {
     
                 meta.protocolList.forEach(proto => {
                     const protoConfig = meta.protocolLabels[proto];
-        
+
+                    // 文本框处理
+                    if (protoConfig && typeof protoConfig === 'object' && protoConfig.type === 'textarea') {
+                        const textareaContainer = document.createElement('div');
+                        textareaContainer.style.marginBottom = '14px';
+                        textareaContainer.style.width = '100%';
+                        textareaContainer.style.flex = '0 0 100%';
+
+                        // 标签行：图标 + 标签 + 可选计数
+                        const labelRow = document.createElement('div');
+                        labelRow.style.display = 'flex';
+                        labelRow.style.alignItems = 'center';
+                        labelRow.style.justifyContent = 'space-between';
+                        labelRow.style.marginBottom = '8px';
+
+                        const textareaLabel = document.createElement('div');
+                        textareaLabel.style.fontSize = '0.82rem';
+                        textareaLabel.style.fontWeight = '600';
+                        textareaLabel.style.color = '#334155';
+                        textareaLabel.style.display = 'flex';
+                        textareaLabel.style.alignItems = 'center';
+                        textareaLabel.style.gap = '6px';
+                        textareaLabel.innerHTML = \`<span style="font-size:1rem">🚀</span> \${protoConfig.label || proto}\`;
+
+                        const countBadge = document.createElement('span');
+                        countBadge.id = \`count-\${proto}\`;
+                        countBadge.style.fontSize = '0.68rem';
+                        countBadge.style.color = '#94a3b8';
+                        countBadge.style.background = '#f1f5f9';
+                        countBadge.style.padding = '2px 10px';
+                        countBadge.style.borderRadius = '30px';
+                        countBadge.style.fontWeight = '500';
+                        countBadge.style.transition = '0.2s';
+                        countBadge.innerText = '0 行';
+
+                        labelRow.appendChild(textareaLabel);
+                        labelRow.appendChild(countBadge);
+
+                        const textarea = document.createElement('textarea');
+                        textarea.className = 'proto-textarea';
+                        textarea.setAttribute('data-proto', proto);
+                        textarea.placeholder = protoConfig.placeholder || '';
+
+                        // 基础样式
+                        const baseStyle = textarea.style;
+                        baseStyle.width = '100%';
+                        baseStyle.minHeight = '130px';
+                        baseStyle.padding = '14px';
+                        baseStyle.borderRadius = '16px';
+                        baseStyle.border = '1.5px solid #e2e8f0';
+                        baseStyle.fontSize = '0.82rem';
+                        baseStyle.fontFamily = "'SF Mono', 'Fira Code', monospace";
+                        baseStyle.lineHeight = '1.6';
+                        baseStyle.color = '#1e293b';
+                        baseStyle.background = '#f8fafc';
+                        baseStyle.resize = 'vertical';
+                        baseStyle.boxSizing = 'border-box';
+                        baseStyle.outline = 'none';
+                        baseStyle.transition = 'all 0.25s ease';
+                        baseStyle.maxHeight = window.innerHeight > 600 ? '320px' : '45vh';
+                        baseStyle.caretColor = 'var(--primary)';
+
+                        // 焦点事件
+                        textarea.addEventListener('focus', () => {
+                            textarea.style.borderColor = 'var(--primary)';
+                            textarea.style.background = '#ffffff';
+                            textarea.style.boxShadow = '0 0 0 4px rgba(99,102,241,0.1)';
+                        });
+                        textarea.addEventListener('blur', () => {
+                            textarea.style.borderColor = '#e2e8f0';
+                            textarea.style.background = '#f8fafc';
+                            textarea.style.boxShadow = 'none';
+                        });
+                        // 行数实时更新
+                        textarea.addEventListener('input', () => {
+                            const lines = textarea.value.trim() ? textarea.value.split('\\n').filter(Boolean).length : 0;
+                            countBadge.innerText = lines + ' 行';
+                            countBadge.style.background = lines > 0 ? '#eef2ff' : '#f1f5f9';
+                            countBadge.style.color = lines > 0 ? 'var(--primary)' : '#94a3b8';
+                        });
+
+                        // 多行 placeholder：内容放输入框内，有内容时自动隐藏
+                        textarea.placeholder = \`ip:port#名称 或 ip:port\\nip:port 无名称时自动使用 ip-port 为名\\n[2606:4700::]:2053#IPv6\\nhttps://... 远程地址列表\\nsub://xxx 订阅生成器\`;
+
+                        textareaContainer.appendChild(labelRow);
+                        textareaContainer.appendChild(textarea);
+                        groupDiv.appendChild(textareaContainer);
+                        return;
+                    }
+
                     // 通用判断：如果是对象且有 levels 属性，则渲染为下拉框
                     if (protoConfig && typeof protoConfig === 'object' && protoConfig.levels) {
                         // 下拉框处理（通用）

@@ -1,4 +1,4 @@
-import { fetchpackExtract, fetchipExtract, fetchResponse } from '../../utils/index.js';
+import { fetchpackExtract, fetchipExtract, fetchResponse, resolveCFIP, applyCFIPToOutbounds } from '../../utils/index.js';
 import getOutbounds_Data from './outbounds.js';
 import Config111 from '../../config/singbox_1.11.X.js';
 import Config112 from '../../config/singbox_1.12.X.js';
@@ -21,6 +21,10 @@ export async function getsingbox_config(e) {
         // 单独处理附加包/IP排除数据
         if (e.exclude_package) e.Package = await fetchpackExtract();
         if (e.exclude_address) e.Address = await fetchipExtract();
+        if (e.cfip) {
+            const cfipResults = await resolveCFIP(e.cfip, e.userAgent);
+            if (cfipResults) data.data.outbounds = applyCFIPToOutbounds(data.data.outbounds, cfipResults);
+        }
         return {
             status: data.status,
             headers: data.headers,
@@ -60,6 +64,10 @@ export async function getsingbox_config(e) {
     }
 
     applyTemplate(config, Rule_Data.data, e);
+    if (e.cfip) {
+        const cfipResults = parseCFIP(e.cfip);
+        if (cfipResults) config.outbounds = applyCFIPToOutbounds(config.outbounds, cfipResults);
+    }
     return {
         status: Outbounds_Data.status,
         headers: Outbounds_Data.headers,

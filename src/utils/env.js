@@ -43,6 +43,8 @@ export function buildConfig(request, env, isNode = false) {
     if (getParamBool('ech')) data.ech = true;
     if (getParamBool('relay')) data.relay = true;
     if (getParamBool('fallback')) data.fallback = true;
+    const cfip = getParam('cfip');
+    if (cfip) data.cfip = cfip;
 
     data.IMG = getEnv('IMG', backimg);
     data.sub = getEnv('SUB', subapi);
